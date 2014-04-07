@@ -337,7 +337,7 @@ public class PeerGroupTest extends TestWithPeerGroup {
         // Check the fast catchup time was initialized to something around the current runtime minus a week.
         // The wallet was already added to the peer in setup.
         final int WEEK = 86400 * 7;
-        final long now = Utils.currentTimeMillis() / 1000;
+        final long now = Utils.currentTimeSeconds();
         peerGroup.startAndWait();
         assertTrue(peerGroup.getFastCatchupTimeSecs() > now - WEEK - 10000);
         Wallet w2 = new Wallet(params);
@@ -500,9 +500,7 @@ public class PeerGroupTest extends TestWithPeerGroup {
         stopPeerServer(2);
         assertEquals(2002, disconnectedPeers.take().getAddress().getPort()); // peer died
 
-        // Peer 2 is tried twice before peer 1, since it has a lower backoff due to recent success
-        Utils.passMockSleep();
-        assertEquals(2002, disconnectedPeers.take().getAddress().getPort());
+        // Peer 2 is tried before peer 1, since it has a lower backoff due to recent success
         Utils.passMockSleep();
         assertEquals(2002, disconnectedPeers.take().getAddress().getPort());
         Utils.passMockSleep();
@@ -539,5 +537,30 @@ public class PeerGroupTest extends TestWithPeerGroup {
         InboundMessageQueuer p3 = connectPeer(3);
         assertTrue(p3.lastReceivedFilter.contains(key.getPubKey()));
         assertTrue(p3.lastReceivedFilter.contains(outpoint.bitcoinSerialize()));
+    }
+
+    @Test
+    public void testBloomResendOnNewKey() throws Exception {
+        // Check that when we add a new key to the wallet, the Bloom filter is re-calculated and re-sent.
+        peerGroup.startAndWait();
+        // Create a couple of peers.
+        InboundMessageQueuer p1 = connectPeer(1);
+        InboundMessageQueuer p2 = connectPeer(2);
+        BloomFilter f1 = p1.lastReceivedFilter;
+        BloomFilter f2 = p2.lastReceivedFilter;
+        final ECKey key = new ECKey();
+        wallet.addKey(key);
+        peerGroup.waitForJobQueue();
+        BloomFilter f3 = (BloomFilter) outbound(p1);
+        BloomFilter f4 = (BloomFilter) outbound(p2);
+        assertTrue(outbound(p1) instanceof MemoryPoolMessage);
+        assertTrue(outbound(p2) instanceof MemoryPoolMessage);
+        assertNotEquals(f1, f3);
+        assertNotEquals(f2, f4);
+        assertEquals(f3, f4);
+        assertTrue(f3.contains(key.getPubKey()));
+        assertTrue(f3.contains(key.getPubKeyHash()));
+        assertFalse(f1.contains(key.getPubKey()));
+        assertFalse(f1.contains(key.getPubKeyHash()));
     }
 }

@@ -396,6 +396,18 @@ public class Transaction extends ChildMessage implements Serializable {
     }
 
     /**
+     * Returns true if any of the outputs is marked as spent.
+     */
+    public boolean isAnyOutputSpent() {
+        maybeParse();
+        for (TransactionOutput output : outputs) {
+            if (!output.isAvailableForSpending())
+                return true;
+        }
+        return false;
+    }
+
+    /**
      * Returns false if this transaction has at least one output that is owned by the given wallet and unspent, true
      * otherwise.
      */
@@ -622,8 +634,15 @@ public class Transaction extends ChildMessage implements Serializable {
             try {
                 Script scriptSig = in.getScriptSig();
                 s.append(scriptSig);
-                s.append(" / ");
-                s.append(in.getOutpoint().toString());
+                s.append("\n          ");
+                s.append("outpoint:");
+                final TransactionOutPoint outpoint = in.getOutpoint();
+                s.append(outpoint.toString());
+                final TransactionOutput connectedOutput = outpoint.getConnectedOutput();
+                if (connectedOutput != null) {
+                    s.append(" hash160:");
+                    s.append(Utils.bytesToHexString(connectedOutput.getScriptPubKey().getPubKeyHash()));
+                }
             } catch (Exception e) {
                 s.append("[exception: ").append(e.getMessage()).append("]");
             }
@@ -1184,7 +1203,7 @@ public class Transaction extends ChildMessage implements Serializable {
 
         BigInteger valueOut = BigInteger.ZERO;
         for (TransactionOutput output : outputs) {
-            if (output.getValue().compareTo(BigInteger.ZERO) < 0)
+            if (output.getValue().signum() < 0)
                 throw new VerificationException("Transaction output negative");
             valueOut = valueOut.add(output.getValue());
         }

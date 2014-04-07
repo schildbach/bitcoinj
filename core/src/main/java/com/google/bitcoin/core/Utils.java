@@ -1,5 +1,6 @@
 /**
  * Copyright 2011 Google Inc.
+ * Copyright 2014 Andreas Schildbach
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -120,7 +121,7 @@ public class Utils {
      */
     public static BigInteger toNanoCoins(String coins) {
         BigInteger bigint = new BigDecimal(coins).movePointRight(8).toBigIntegerExact();
-        if (bigint.compareTo(BigInteger.ZERO) < 0)
+        if (bigint.signum() < 0)
             throw new ArithmeticException("Negative coins specified");
         if (bigint.compareTo(NetworkParameters.MAX_MONEY) > 0)
             throw new ArithmeticException("Amount larger than the total quantity of Bitcoins possible specified.");
@@ -331,7 +332,7 @@ public class Utils {
      */
     public static String bitcoinValueToFriendlyString(BigInteger value) {
         // TODO: This API is crap. This method should go away when we encapsulate money values.
-        boolean negative = value.compareTo(BigInteger.ZERO) < 0;
+        boolean negative = value.signum() < 0;
         if (negative)
             value = value.negate();
         BigDecimal bd = new BigDecimal(value, 8);
@@ -404,7 +405,7 @@ public class Utils {
             else
                 return new byte[] {0x00, 0x00, 0x00, 0x00};
         }
-        boolean isNegative = value.compareTo(BigInteger.ZERO) < 0;
+        boolean isNegative = value.signum() < 0;
         if (isNegative)
             value = value.negate();
         byte[] array = value.toByteArray();
@@ -460,13 +461,20 @@ public class Utils {
      */
     public static Date rollMockClockMillis(long millis) {
         if (mockTime == null)
-            mockTime = new Date();
+            throw new IllegalStateException("You need to use setMockClock() first.");
         mockTime = new Date(mockTime.getTime() + millis);
         return mockTime;
     }
 
     /**
-     * Sets the mock clock to the given time (in seconds)
+     * Sets the mock clock to the current time.
+     */
+    public static void setMockClock() {
+        mockTime = new Date();
+    }
+
+    /**
+     * Sets the mock clock to the given time (in seconds).
      */
     public static void setMockClock(long mockClock) {
         mockTime = new Date(mockClock * 1000);
@@ -482,14 +490,19 @@ public class Utils {
             return new Date();
     }
 
-    /** Returns the current time in seconds since the epoch, or a mocked out equivalent. */
+    // TODO: Replace usages of this where the result is / 1000 with currentTimeSeconds.
+    /** Returns the current time in milliseconds since the epoch, or a mocked out equivalent. */
     public static long currentTimeMillis() {
         if (mockTime != null)
             return mockTime.getTime();
         else
             return System.currentTimeMillis();
     }
-    
+
+    public static long currentTimeSeconds() {
+        return currentTimeMillis() / 1000;
+    }
+
     public static byte[] copyOf(byte[] in, int length) {
         byte[] out = new byte[length];
         System.arraycopy(in, 0, out, 0, Math.min(length, in.length));

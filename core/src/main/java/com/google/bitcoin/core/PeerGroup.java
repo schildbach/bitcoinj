@@ -202,8 +202,8 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
 
     // Exponential backoff for peers starts at 1 second and maxes at 10 minutes.
     private ExponentialBackoff.Params peerBackoffParams = new ExponentialBackoff.Params(1000, 1.5f, 10 * 60 * 1000);
-    // Tracks failures globally in case of a network failure
-    private ExponentialBackoff groupBackoff = new ExponentialBackoff(new ExponentialBackoff.Params(100, 1.1f, 30 * 1000));
+    // Tracks failures globally in case of a network failure.
+    private ExponentialBackoff groupBackoff = new ExponentialBackoff(new ExponentialBackoff.Params(1000, 1.5f, 10 * 1000));
 
     // Things for the dedicated PeerGroup management thread to do.
     private LinkedBlockingQueue<Runnable> jobQueue = new LinkedBlockingQueue<Runnable>();
@@ -344,7 +344,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
             do {
                 try {
                     connectToAnyPeer();
-                } catch(PeerDiscoveryException e) {
+                } catch (PeerDiscoveryException e) {
                     groupBackoff.trackFailure();
                 }
             } while (isRunning() && countConnectedAndPendingPeers() < getMaxConnections());
@@ -402,7 +402,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
      * Sets the {@link VersionMessage} that will be announced on newly created connections. A version message is
      * primarily interesting because it lets you customize the "subVer" field which is used a bit like the User-Agent
      * field from HTTP. It means your client tells the other side what it is, see
-     * <a href="https://en.bitcoin.it/wiki/BIP_0014">BIP 14</a>.
+     * <a href="https://github.com/bitcoin/bips/blob/master/bip-0014.mediawiki">BIP 14</a>.
      *
      * The VersionMessage you provide is copied and the best chain height/time filled in for each new connection,
      * therefore you don't have to worry about setting that. The provided object is really more of a template.
@@ -577,6 +577,8 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
     }
 
     protected void discoverPeers() throws PeerDiscoveryException {
+        if (peerDiscoverers.isEmpty())
+            throw new PeerDiscoveryException("No peer discoverers registered");
         long start = System.currentTimeMillis();
         Set<PeerAddress> addressSet = Sets.newHashSet();
         for (PeerDiscovery peerDiscovery : peerDiscoverers) {
@@ -632,10 +634,10 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
         final State state = state();
         if (!(state == State.STARTING || state == State.RUNNING)) return;
 
-        final PeerAddress addr;
+        PeerAddress addr = null;
 
         long nowMillis = Utils.currentTimeMillis();
-
+        long retryTime = 0;
         lock.lock();
         try {
             if (!haveReadyInactivePeer(nowMillis)) {
@@ -648,18 +650,21 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
                 return;
             }
             addr = inactives.poll();
+            retryTime = backoffMap.get(addr).getRetryTime();
         } finally {
+            // discoverPeers might throw an exception if something goes wrong: we then hit this path with addr == null.
+            retryTime = Math.max(retryTime, groupBackoff.getRetryTime());
             lock.unlock();
-        }
-
-        // Delay if any backoff is required
-        long retryTime = Math.max(backoffMap.get(addr).getRetryTime(), groupBackoff.getRetryTime());
-        if (retryTime > nowMillis) {
-            // Sleep until retry time
-            Utils.sleep(retryTime - nowMillis);
+            if (retryTime > nowMillis) {
+                // Sleep until retry time
+                final long millis = retryTime - nowMillis;
+                log.info("Waiting {} msec before next connect attempt {}", millis, addr == null ? "" : " to " + addr);
+                Utils.sleep(millis);
+            }
         }
 
         // This method constructs a Peer and puts it into pendingPeers.
+        checkNotNull(addr);   // Help static analysis which can't see that addr is always set if we didn't throw above.
         connectTo(addr, false);
     }
 
@@ -805,10 +810,11 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
                 BloomFilter filter = new BloomFilter(lastBloomFilterElementCount, bloomFilterFPRate, bloomFilterTweak, bloomFlags);
                 for (PeerFilterProvider p : peerFilterProviders)
                     filter.merge(p.getBloomFilter(lastBloomFilterElementCount, bloomFilterFPRate, bloomFilterTweak));
-                bloomFilter = filter;
 
                 boolean changed = !filter.equals(bloomFilter);
                 boolean send = false;
+
+                bloomFilter = filter;
 
                 switch (mode) {
                     case SEND_IF_CHANGED: send = changed; break;
@@ -885,7 +891,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
     protected Peer connectTo(PeerAddress address, boolean incrementMaxConnections) {
         VersionMessage ver = getVersionMessage().duplicate();
         ver.bestHeight = chain == null ? 0 : chain.getBestChainHeight();
-        ver.time = Utils.currentTimeMillis() / 1000;
+        ver.time = Utils.currentTimeSeconds();
 
         Peer peer = new Peer(params, ver, address, chain, memoryPool);
         peer.addEventListener(startupListener, Threading.SAME_THREAD);

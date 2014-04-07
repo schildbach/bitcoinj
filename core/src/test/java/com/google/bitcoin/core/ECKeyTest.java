@@ -39,18 +39,18 @@ import org.slf4j.LoggerFactory;
 import org.spongycastle.crypto.params.KeyParameter;
 import org.spongycastle.util.encoders.Hex;
 
+import java.io.InputStream;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.security.SignatureException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-import java.io.InputStream;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import static com.google.bitcoin.core.Utils.reverseBytes;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static org.junit.Assert.*;
 
 public class ECKeyTest {
@@ -171,6 +171,11 @@ public class ECKeyTest {
             "11da3761e86431e4a54c176789e41f1651b324d240d599a7067bee23d328ec2a"));
         assertTrue(roundtripKey.verify(message, decodedKey.sign(new Sha256Hash(message)).encodeToDER()));
         assertTrue(decodedKey.verify(message, roundtripKey.sign(new Sha256Hash(message)).encodeToDER()));
+
+        // Verify bytewise equivalence of public keys (i.e. compression state is preserved)
+        ECKey key = new ECKey();
+        ECKey key2 = ECKey.fromASN1(key.toASN1());
+        assertArrayEquals(key.getPubKey(), key2.getPubKey());
     }
 
     @Test
@@ -249,55 +254,25 @@ public class ECKeyTest {
 
     @Test
     public void testUnencryptedCreate() throws Exception {
-        ECKey unencryptedKey = new ECKey();
-
-        // The key should initially be unencrypted.
-        assertTrue(!unencryptedKey.isEncrypted());
-
-        // Copy the private key bytes for checking later.
-        byte[] originalPrivateKeyBytes = new byte[32];
-        System.arraycopy(unencryptedKey.getPrivKeyBytes(), 0, originalPrivateKeyBytes, 0, 32);
-        log.info("Original private key = " + Utils.bytesToHexString(originalPrivateKeyBytes));
-
-        // Encrypt the key.
-        ECKey encryptedKey = unencryptedKey.encrypt(keyCrypter, keyCrypter.deriveKey(PASSWORD1));
-
-        // The key should now be encrypted.
-        assertTrue("Key is not encrypted but it should be", encryptedKey.isEncrypted());
-
-        // The unencrypted private key bytes of the encrypted keychain
-        // should be null or all be blank.
-        byte[] privateKeyBytes = encryptedKey.getPrivKeyBytes();
-        if (privateKeyBytes != null) {
-            for (int i = 0; i < privateKeyBytes.length; i++) {
-                assertEquals("Byte " + i + " of the private key was not zero but should be", 0, privateKeyBytes[i]);
-            }
-        }
-
-        // Decrypt the key.
-        unencryptedKey = encryptedKey.decrypt(keyCrypter, keyCrypter.deriveKey(PASSWORD1));
-
-        // The key should be unencrypted
-        assertTrue("Key is not unencrypted but it should be", !unencryptedKey.isEncrypted());
-
-        // The reborn unencrypted private key bytes should match the
-        // original private key.
-        privateKeyBytes = unencryptedKey.getPrivKeyBytes();
-        log.info("Reborn decrypted private key = " + Utils.bytesToHexString(privateKeyBytes));
-
-        for (int i = 0; i < privateKeyBytes.length; i++) {
-            assertEquals("Byte " + i + " of the private key did not match the original", originalPrivateKeyBytes[i],
-                    privateKeyBytes[i]);
-        }
+        Utils.setMockClock();
+        ECKey key = new ECKey();
+        long time = key.getCreationTimeSeconds();
+        assertNotEquals(0, time);
+        assertTrue(!key.isEncrypted());
+        byte[] originalPrivateKeyBytes = key.getPrivKeyBytes();
+        ECKey encryptedKey = key.encrypt(keyCrypter, keyCrypter.deriveKey(PASSWORD1));
+        assertEquals(time, encryptedKey.getCreationTimeSeconds());
+        assertTrue(encryptedKey.isEncrypted());
+        assertNull(encryptedKey.getPrivKeyBytes());
+        key = encryptedKey.decrypt(keyCrypter, keyCrypter.deriveKey(PASSWORD1));
+        assertTrue(!key.isEncrypted());
+        assertArrayEquals(originalPrivateKeyBytes, key.getPrivKeyBytes());
     }
 
     @Test
     public void testEncryptedCreate() throws Exception {
         ECKey unencryptedKey = new ECKey();
-
-        // Copy the private key bytes for checking later.
-        byte[] originalPrivateKeyBytes = new byte[32];
-        System.arraycopy(unencryptedKey.getPrivKeyBytes(), 0, originalPrivateKeyBytes, 0, 32);
+        byte[] originalPrivateKeyBytes = checkNotNull(unencryptedKey.getPrivKeyBytes());
         log.info("Original private key = " + Utils.bytesToHexString(originalPrivateKeyBytes));
 
         EncryptedPrivateKey encryptedPrivateKey = keyCrypter.encrypt(unencryptedKey.getPrivKeyBytes(), keyCrypter.deriveKey(PASSWORD1));
@@ -316,17 +291,8 @@ public class ECKeyTest {
 
         // Decrypt the key.
         ECKey rebornUnencryptedKey = encryptedKey.decrypt(keyCrypter, keyCrypter.deriveKey(PASSWORD1));
-
-        // The key should be unencrypted
-        assertTrue("Key is not unencrypted but it should be", !rebornUnencryptedKey.isEncrypted());
-
-        // The reborn unencrypted private key bytes should match the original private key.
-        privateKeyBytes = rebornUnencryptedKey.getPrivKeyBytes();
-        log.info("Reborn decrypted private key = " + Utils.bytesToHexString(privateKeyBytes));
-
-        for (int i = 0; i < privateKeyBytes.length; i++) {
-            assertEquals("Byte " + i + " of the private key did not match the original", originalPrivateKeyBytes[i], privateKeyBytes[i]);
-        }
+        assertTrue(!rebornUnencryptedKey.isEncrypted());
+        assertArrayEquals(originalPrivateKeyBytes, rebornUnencryptedKey.getPrivKeyBytes());
     }
 
     @Test
@@ -367,7 +333,7 @@ public class ECKeyTest {
     public void keyRecoveryWithEncryptedKey() throws Exception {
         ECKey unencryptedKey = new ECKey();
         KeyParameter aesKey =  keyCrypter.deriveKey(PASSWORD1);
-        ECKey encryptedKey = unencryptedKey.encrypt(keyCrypter,aesKey);
+        ECKey encryptedKey = unencryptedKey.encrypt(keyCrypter, aesKey);
 
         String message = "Goodbye Jupiter!";
         Sha256Hash hash = Sha256Hash.create(message.getBytes());

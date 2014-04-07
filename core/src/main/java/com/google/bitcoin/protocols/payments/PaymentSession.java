@@ -1,5 +1,6 @@
 /**
  * Copyright 2013 Google Inc.
+ * Copyright 2014 Andreas Schildbach
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,14 +29,8 @@ import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.bitcoin.protocols.payments.Protos;
-import org.spongycastle.asn1.ASN1String;
-import org.spongycastle.asn1.x500.AttributeTypeAndValue;
-import org.spongycastle.asn1.x500.RDN;
-import org.spongycastle.asn1.x500.X500Name;
-import org.spongycastle.asn1.x500.style.RFC4519Style;
 
 import javax.annotation.Nullable;
-import javax.security.auth.x500.X500Principal;
 import java.io.*;
 import java.math.BigInteger;
 import java.net.*;
@@ -56,28 +51,28 @@ import java.util.concurrent.Callable;
  * <li>Directly with a {@link Protos.PaymentRequest} object</li>
  * </ul>
  *
- * If initialized with a BitcoinURI or a url, a network request is made for the payment request object and a
- * ListenableFuture is returned that will be notified with the PaymentSession object after it is downloaded.
+ * <p>If initialized with a BitcoinURI or a url, a network request is made for the payment request object and a
+ * ListenableFuture is returned that will be notified with the PaymentSession object after it is downloaded.</p>
  *
- * Once the PaymentSession is initialized, typically a wallet application will prompt the user to confirm that the
+ * <p>Once the PaymentSession is initialized, typically a wallet application will prompt the user to confirm that the
  * amount and recipient are correct, perform any additional steps, and then construct a list of transactions to pass to
- * the sendPayment method.
+ * the sendPayment method.</p>
  *
- * Call sendPayment with a list of transactions that will be broadcast. A {@link Protos.Payment} message will be sent to
- * the merchant if a payment url is provided in the PaymentRequest.
- * NOTE: sendPayment does NOT broadcast the transactions to the bitcoin network.
- *
- * sendPayment returns a ListenableFuture that will be notified when a {@link Protos.PaymentACK} is received from the
- * merchant. Typically a wallet will show the message to the user as a confirmation message that the payment is now
- * "processing" or that an error occurred.
+ * <p>Call sendPayment with a list of transactions that will be broadcast. A {@link Protos.Payment} message will be sent
+ * to the merchant if a payment url is provided in the PaymentRequest. NOTE: sendPayment does NOT broadcast the
+ * transactions to the bitcoin network. Instead it returns a ListenableFuture that will be notified when a
+ * {@link Protos.PaymentACK} is received from the merchant. Typically a wallet will show the message to the user
+ * as a confirmation message that the payment is now "processing" or that an error occurred, and then broadcast the
+ * tx itself later if needed.</p>
  *
  * @author Kevin Greene
+ * @author Andreas Schildbach
  * @see <a href="https://github.com/bitcoin/bips/blob/master/bip-0070.mediawiki">BIP 0070</a>
  */
 public class PaymentSession {
     private static ListeningExecutorService executor = Threading.THREAD_POOL;
     private NetworkParameters params;
-    private String trustStorePath;
+    private final TrustStoreLoader trustStoreLoader;
     private Protos.PaymentRequest paymentRequest;
     private Protos.PaymentDetails paymentDetails;
     private BigInteger totalValue = BigInteger.ZERO;
@@ -120,16 +115,15 @@ public class PaymentSession {
      * If verifyPki is specified and the payment request object specifies a PKI method, then the system trust store will
      * be used to verify the signature provided by the payment request. An exception is thrown by the future if the
      * signature cannot be verified.
-     * If trustStorePath is not null, the trust store used for PKI verification will be loaded from the given location
-     * instead of using the system default trust store location.
+     * If trustStoreLoader is null, the system default trust store is used.
      */
-    public static ListenableFuture<PaymentSession> createFromBitcoinUri(final BitcoinURI uri, final boolean verifyPki, @Nullable final String trustStorePath)
+    public static ListenableFuture<PaymentSession> createFromBitcoinUri(final BitcoinURI uri, final boolean verifyPki, @Nullable final TrustStoreLoader trustStoreLoader)
             throws PaymentRequestException {
         String url = uri.getPaymentRequestUrl();
         if (url == null)
             throw new PaymentRequestException.InvalidPaymentRequestURL("No payment request URL (r= parameter) in BitcoinURI " + uri);
         try {
-            return fetchPaymentRequest(new URI(url), verifyPki, trustStorePath);
+            return fetchPaymentRequest(new URI(url), verifyPki, trustStoreLoader);
         } catch (URISyntaxException e) {
             throw new PaymentRequestException.InvalidPaymentRequestURL(e);
         }
@@ -164,21 +158,20 @@ public class PaymentSession {
      * If the payment request object specifies a PKI method, then the system trust store will
      * be used to verify the signature provided by the payment request. An exception is thrown by the future if the
      * signature cannot be verified.
-     * If trustStorePath is not null, the trust store used for PKI verification will be loaded from the given location
-     * instead of using the system default trust store location.
+     * If trustStoreLoader is null, the system default trust store is used.
      */
-    public static ListenableFuture<PaymentSession> createFromUrl(final String url, final boolean verifyPki, @Nullable final String trustStorePath)
+    public static ListenableFuture<PaymentSession> createFromUrl(final String url, final boolean verifyPki, @Nullable final TrustStoreLoader trustStoreLoader)
             throws PaymentRequestException {
         if (url == null)
             throw new PaymentRequestException.InvalidPaymentRequestURL("null paymentRequestUrl");
         try {
-            return fetchPaymentRequest(new URI(url), verifyPki, trustStorePath);
+            return fetchPaymentRequest(new URI(url), verifyPki, trustStoreLoader);
         } catch(URISyntaxException e) {
             throw new PaymentRequestException.InvalidPaymentRequestURL(e);
         }
     }
 
-    private static ListenableFuture<PaymentSession> fetchPaymentRequest(final URI uri, final boolean verifyPki, @Nullable final String trustStorePath) {
+    private static ListenableFuture<PaymentSession> fetchPaymentRequest(final URI uri, final boolean verifyPki, @Nullable final TrustStoreLoader trustStoreLoader) {
         return executor.submit(new Callable<PaymentSession>() {
             @Override
             public PaymentSession call() throws Exception {
@@ -186,7 +179,7 @@ public class PaymentSession {
                 connection.setRequestProperty("Accept", "application/bitcoin-paymentrequest");
                 connection.setUseCaches(false);
                 Protos.PaymentRequest paymentRequest = Protos.PaymentRequest.parseFrom(connection.getInputStream());
-                return new PaymentSession(paymentRequest, verifyPki, trustStorePath);
+                return new PaymentSession(paymentRequest, verifyPki, trustStoreLoader);
             }
         });
     }
@@ -196,8 +189,7 @@ public class PaymentSession {
      * Verifies PKI by default.
      */
     public PaymentSession(Protos.PaymentRequest request) throws PaymentRequestException {
-        parsePaymentRequest(request);
-        verifyPki();
+        this(request, true, null);
     }
 
     /**
@@ -205,19 +197,16 @@ public class PaymentSession {
      * If verifyPki is true, also validates the signature and throws an exception if it fails.
      */
     public PaymentSession(Protos.PaymentRequest request, boolean verifyPki) throws PaymentRequestException {
-        parsePaymentRequest(request);
-        if (verifyPki)
-            verifyPki();
+        this(request, verifyPki, null);
     }
 
     /**
      * Creates a PaymentSession from the provided {@link Protos.PaymentRequest}.
      * If verifyPki is true, also validates the signature and throws an exception if it fails.
-     * If trustStorePath is not null, the trust store used for PKI verification will be loaded from the given location
-     * instead of using the system default trust store location.
+     * If trustStoreLoader is null, the system default trust store is used.
      */
-    public PaymentSession(Protos.PaymentRequest request, boolean verifyPki, @Nullable final String trustStorePath) throws PaymentRequestException {
-        this.trustStorePath = trustStorePath;
+    public PaymentSession(Protos.PaymentRequest request, boolean verifyPki, @Nullable final TrustStoreLoader trustStoreLoader) throws PaymentRequestException {
+        this.trustStoreLoader = trustStoreLoader != null ? trustStoreLoader : new TrustStoreLoader.DefaultTrustStoreLoader();
         parsePaymentRequest(request);
         if (verifyPki)
             verifyPki();
@@ -227,26 +216,30 @@ public class PaymentSession {
      * Message returned by the merchant in response to a Payment message.
      */
     public class Ack {
-        private String memo = "";
+        @Nullable private String memo;
 
-        Ack(String memo) {
+        Ack(@Nullable String memo) {
             this.memo = memo;
         }
 
         /**
          * Returns the memo included by the merchant in the payment ack. This message is typically displayed to the user
-         * as a notification (e.g. "Your payment was received and is being processed").
+         * as a notification (e.g. "Your payment was received and is being processed"). If none was provided, returns
+         * null.
          */
-        public String getMemo() {
+        @Nullable public String getMemo() {
             return memo;
         }
     }
 
     /**
-     * Returns the memo included by the merchant in the payment request.
+     * Returns the memo included by the merchant in the payment request, or null if not found.
      */
-    public String getMemo() {
-        return paymentDetails.getMemo();
+    @Nullable public String getMemo() {
+        if (paymentDetails.hasMemo())
+            return paymentDetails.getMemo();
+        else
+            return null;
     }
 
     /**
@@ -374,7 +367,7 @@ public class PaymentSession {
                 InputStream inStream = connection.getInputStream();
                 Protos.PaymentACK.Builder paymentAckBuilder = Protos.PaymentACK.newBuilder().mergeFrom(inStream);
                 Protos.PaymentACK paymentAck = paymentAckBuilder.build();
-                String memo = "";
+                String memo = null;
                 if (paymentAck.hasMemo())
                     memo = paymentAck.getMemo();
                 return new Ack(memo);
@@ -387,9 +380,7 @@ public class PaymentSession {
      */
     public static class PkiVerificationData {
         /** Display name of the payment requestor, could be a domain name, email address, legal name, etc */
-        public final String name;
-        /** The "org" part of the payment requestors ID. */
-        public final String orgName;
+        public final String displayName;
         /** SSL public key that was used to sign. */
         public final PublicKey merchantSigningKey;
         /** Object representing the CA that verified the merchant's ID */
@@ -397,36 +388,15 @@ public class PaymentSession {
         /** String representing the display name of the CA that verified the merchant's ID */
         public final String rootAuthorityName;
 
-        private PkiVerificationData(@Nullable String name, @Nullable String orgName, PublicKey merchantSigningKey,
+        private PkiVerificationData(@Nullable String displayName, PublicKey merchantSigningKey,
                                     TrustAnchor rootAuthority) throws PaymentRequestException.PkiVerificationException {
-            this.name = name;
-            this.orgName = orgName;
-            this.merchantSigningKey = merchantSigningKey;
-            this.rootAuthority = rootAuthority;
-            this.rootAuthorityName = getNameFromCert(rootAuthority);
-        }
-
-        private String getNameFromCert(TrustAnchor rootAuthority) throws PaymentRequestException.PkiVerificationException {
-            org.spongycastle.asn1.x500.X500Name name = new X500Name(rootAuthority.getTrustedCert().getSubjectX500Principal().getName());
-            String commonName = null, org = null, location = null, country = null;
-            for (RDN rdn : name.getRDNs()) {
-                AttributeTypeAndValue pair = rdn.getFirst();
-                String val = ((ASN1String)pair.getValue()).getString();
-                if (pair.getType().equals(RFC4519Style.cn))
-                    commonName = val;
-                else if (pair.getType().equals(RFC4519Style.o))
-                    org = val;
-                else if (pair.getType().equals(RFC4519Style.l))
-                    location = val;
-                else if (pair.getType().equals(RFC4519Style.c))
-                    country = val;
-            }
-            if (org != null && location != null && country != null) {
-                return org + ", " + location + ", " + country;
-            } else {
-                if (commonName == null)
-                    throw new PaymentRequestException.PkiVerificationException("Could not find any identity info for root CA");
-                return commonName;
+            try {
+                this.displayName = displayName;
+                this.merchantSigningKey = merchantSigningKey;
+                this.rootAuthority = rootAuthority;
+                this.rootAuthorityName = X509Utils.getDisplayNameFromCertificate(rootAuthority.getTrustedCert());
+            } catch (CertificateParsingException x) {
+                throw new PaymentRequestException.PkiVerificationException(x);
             }
         }
     }
@@ -436,6 +406,7 @@ public class PaymentSession {
      * Returns null if no PKI method was specified in the {@link Protos.PaymentRequest}.
      */
     public @Nullable PkiVerificationData verifyPki() throws PaymentRequestException {
+        List<X509Certificate> certs = null;
         try {
             if (pkiVerificationData != null)
                 return pkiVerificationData;
@@ -459,13 +430,13 @@ public class PaymentSession {
             // The ordering of certificates is defined by the payment protocol spec to be the same as what the Java
             // crypto API requires - convenient!
             CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
-            List<X509Certificate> certs = Lists.newArrayList();
+            certs = Lists.newArrayList();
             for (ByteString bytes : protoCerts.getCertificateList())
                 certs.add((X509Certificate) certificateFactory.generateCertificate(bytes.newInput()));
             CertPath path = certificateFactory.generateCertPath(certs);
 
             // Retrieves the most-trusted CAs from keystore.
-            PKIXParameters params = new PKIXParameters(createKeyStore(trustStorePath));
+            PKIXParameters params = new PKIXParameters(trustStoreLoader.getKeyStore());
             // Revocation not supported in the current version.
             params.setRevocationEnabled(false);
 
@@ -486,24 +457,12 @@ public class PaymentSession {
                 throw new PaymentRequestException.PkiVerificationException("Invalid signature, this payment request is not valid.");
 
             // Signature verifies, get the names from the identity we just verified for presentation to the user.
-            X500Principal principal = certs.get(0).getSubjectX500Principal();
-            // At this point the Java crypto API falls flat on its face and dies - there's no clean way to get the
-            // different parts of the certificate name except for parsing the string. That's hard because of various
-            // custom escaping rules and the usual crap. So, use Bouncy Castle to re-parse the string into binary form
-            // again and then look for the names we want. Fail!
-            org.spongycastle.asn1.x500.X500Name name = new X500Name(principal.getName());
-            String entityName = null, orgName = null;
-            for (RDN rdn : name.getRDNs()) {
-                AttributeTypeAndValue pair = rdn.getFirst();
-                if (pair.getType().equals(RFC4519Style.cn))
-                    entityName = ((ASN1String)pair.getValue()).getString();
-                else if (pair.getType().equals(RFC4519Style.o))
-                    orgName = ((ASN1String)pair.getValue()).getString();
-            }
-            if (entityName == null && orgName == null)
-                throw new PaymentRequestException.PkiVerificationException("Invalid certificate, no CN or O fields");
+            final X509Certificate cert = certs.get(0);
+            String displayName = X509Utils.getDisplayNameFromCertificate(cert);
+            if (displayName == null)
+                throw new PaymentRequestException.PkiVerificationException("Could not extract name from certificate");
             // Everything is peachy. Return some useful data to the caller.
-            PkiVerificationData data = new PkiVerificationData(entityName, orgName, publicKey, result.getTrustAnchor());
+            PkiVerificationData data = new PkiVerificationData(displayName, publicKey, result.getTrustAnchor());
             // Cache the result so we don't have to re-verify if this method is called again.
             pkiVerificationData = data;
             return data;
@@ -521,7 +480,7 @@ public class PaymentSession {
         } catch (CertPathValidatorException e) {
             // The certificate chain isn't known or trusted, probably, the server is using an SSL root we don't
             // know about and the user needs to upgrade to a new version of the software (or import a root cert).
-            throw new PaymentRequestException.PkiVerificationException(e);
+            throw new PaymentRequestException.PkiVerificationException(e, certs);
         } catch (InvalidKeyException e) {
             // Shouldn't happen if the certs verified correctly.
             throw new PaymentRequestException.PkiVerificationException(e);
@@ -535,66 +494,10 @@ public class PaymentSession {
         }
     }
 
-    private KeyStore createKeyStore(@Nullable String path)
-            throws IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException {
-        String keyStoreType = KeyStore.getDefaultType();
-        char[] defaultPassword = "changeit".toCharArray();
-        if (path != null) {
-            // If the user provided path, only try to load the keystore at that path.
-            KeyStore keyStore = KeyStore.getInstance(keyStoreType);
-            FileInputStream is = new FileInputStream(path);
-            keyStore.load(is, defaultPassword);
-            return keyStore;
-        }
-        try {
-            // Check if we are on Android.
-            Class version = Class.forName("android.os.Build$VERSION");
-            // Build.VERSION_CODES.ICE_CREAM_SANDWICH is 14.
-            if (version.getDeclaredField("SDK_INT").getInt(version) >= 14) {
-                // After ICS, Android provided this nice method for loading the keystore,
-                // so we don't have to specify the location explicitly.
-                KeyStore keystore = KeyStore.getInstance("AndroidCAStore");
-                keystore.load(null, null);
-                return keystore;
-            } else {
-                keyStoreType = "BKS";
-                path = System.getProperty("java.home") + "/etc/security/cacerts.bks".replace('/', File.separatorChar);
-            }
-        } catch (ClassNotFoundException e) {
-            // NOP. android.os.Build is not present, so we are not on Android. Fall through.
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException(e);   // Should never happen.
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);   // Should never happen.
-        }
-        if (path == null) {
-            path = System.getProperty("javax.net.ssl.trustStore");
-        }
-        if (path == null) {
-            // Try this default system location for Linux/Windows/OSX.
-            path = System.getProperty("java.home") + "/lib/security/cacerts".replace('/', File.separatorChar);
-        }
-        try {
-            KeyStore keyStore = KeyStore.getInstance(keyStoreType);
-            FileInputStream is = new FileInputStream(path);
-            keyStore.load(is, defaultPassword);
-            return keyStore;
-        } catch (FileNotFoundException e) {
-            // If we failed to find a system trust store, load our own fallback trust store. This can fail on Android
-            // but we should never reach it there.
-            KeyStore keyStore = KeyStore.getInstance("JKS");
-            InputStream is = getClass().getResourceAsStream("cacerts");
-            keyStore.load(is, defaultPassword);
-            return keyStore;
-        }
-    }
-
     private void parsePaymentRequest(Protos.PaymentRequest request) throws PaymentRequestException {
         try {
             if (request == null)
                 throw new PaymentRequestException("request cannot be null");
-            if (!request.hasPaymentDetailsVersion())
-                throw new PaymentRequestException.InvalidVersion("No version");
             if (request.getPaymentDetailsVersion() != 1)
                 throw new PaymentRequestException.InvalidVersion("Version 1 required. Received version " + request.getPaymentDetailsVersion());
             paymentRequest = request;
@@ -617,10 +520,20 @@ public class PaymentSession {
             }
             // This won't ever happen in practice. It would only happen if the user provided outputs
             // that are obviously invalid. Still, we don't want to silently overflow.
-            if (totalValue.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0)
+            if (totalValue.compareTo(NetworkParameters.MAX_MONEY) > 0)
                 throw new PaymentRequestException.InvalidOutputs("The outputs are way too big.");
         } catch (InvalidProtocolBufferException e) {
             throw new PaymentRequestException(e);
         }
+    }
+
+    /** Returns the protobuf that this object was instantiated with. */
+    public Protos.PaymentRequest getPaymentRequest() {
+        return paymentRequest;
+    }
+
+    /** Returns the protobuf that describes the payment to be made. */
+    public Protos.PaymentDetails getPaymentDetails() {
+        return paymentDetails;
     }
 }
