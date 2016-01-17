@@ -3281,7 +3281,7 @@ public class WalletTest extends TestWithWallet {
 
     @Test
     public void completeTxPartiallySignedMarriedWithEmptySig() throws Exception {
-        byte[] emptySig = {};
+        byte[] emptySig = null;
         completeTxPartiallySignedMarried(Wallet.MissingSigsMode.USE_OP_ZERO, emptySig);
     }
 
