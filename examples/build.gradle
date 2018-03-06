@@ -1,0 +1,9 @@
+apply plugin: 'java'
+
+dependencies {
+    compile project(':core')
+    compile 'net.sf.jopt-simple:jopt-simple:4.3'
+    compile 'org.slf4j:slf4j-jdk14:1.7.25'
+}
+
+sourceCompatibility = 1.8
