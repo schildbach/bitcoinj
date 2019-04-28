@@ -74,6 +74,7 @@ import static com.google.common.base.Throwables.throwIfUnchecked;
  */
 public abstract class PaymentChannelClientState {
     private static final Logger log = LoggerFactory.getLogger(PaymentChannelClientState.class);
+    private static final Coin MIN_NONDUST_OUTPUT = Coin.valueOf(546); // satoshis
     // How much value is currently allocated to us. Starts as being same as totalValue.
     protected Coin valueToMe;
 
@@ -293,7 +294,7 @@ public abstract class PaymentChannelClientState {
         if (size.signum() < 0)
             throw new ValueOutOfRangeException("Tried to decrement payment");
         Coin newValueToMe = getValueToMe().subtract(size);
-        if (newValueToMe.compareTo(Transaction.MIN_NONDUST_OUTPUT) < 0 && newValueToMe.signum() > 0) {
+        if (newValueToMe.compareTo(MIN_NONDUST_OUTPUT) < 0 && newValueToMe.signum() > 0) {
             log.info("New value being sent back as change was smaller than minimum nondust output, sending all");
             size = getValueToMe();
             newValueToMe = Coin.ZERO;

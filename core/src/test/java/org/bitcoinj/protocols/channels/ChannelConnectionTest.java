@@ -60,6 +60,7 @@ import static org.junit.Assert.*;
 @RunWith(Parameterized.class)
 public class ChannelConnectionTest extends TestWithWallet {
     private static final int CLIENT_MAJOR_VERSION = 1;
+    private static final Coin MIN_NONDUST_OUTPUT = Coin.valueOf(546); // satoshis
     private Wallet serverWallet;
     private AtomicBoolean fail;
     private BlockingQueue<Transaction> broadcasts;
@@ -624,7 +625,7 @@ public class ChannelConnectionTest extends TestWithWallet {
                 .setInitiate(Protos.Initiate.newBuilder().setExpireTimeSecs(Utils.currentTimeSeconds() + 60 * 60 * 48)
                         .setMinAcceptedChannelSize(100)
                         .setMultisigKey(ByteString.copyFrom(new ECKey().getPubKey()))
-                        .setMinPayment(Transaction.MIN_NONDUST_OUTPUT.value))
+                        .setMinPayment(MIN_NONDUST_OUTPUT.value))
                 .setType(MessageType.INITIATE).build());
 
         pair.clientRecorder.checkNextMsg(MessageType.ERROR);
@@ -649,7 +650,7 @@ public class ChannelConnectionTest extends TestWithWallet {
                 .setInitiate(Protos.Initiate.newBuilder().setExpireTimeSecs(Utils.currentTimeSeconds())
                         .setMinAcceptedChannelSize(COIN.add(SATOSHI).value)
                         .setMultisigKey(ByteString.copyFrom(new ECKey().getPubKey()))
-                        .setMinPayment(Transaction.MIN_NONDUST_OUTPUT.value))
+                        .setMinPayment(MIN_NONDUST_OUTPUT.value))
                 .setType(MessageType.INITIATE).build());
         pair.clientRecorder.checkNextMsg(MessageType.ERROR);
         assertEquals(CloseReason.SERVER_REQUESTED_TOO_MUCH_VALUE, pair.clientRecorder.q.take());

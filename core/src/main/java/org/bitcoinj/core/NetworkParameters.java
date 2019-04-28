@@ -367,10 +367,6 @@ public abstract class NetworkParameters {
      */
     public abstract Coin getMaxMoney();
 
-    /** @deprecated use {@link TransactionOutput#getMinNonDustValue()} */
-    @Deprecated
-    public abstract Coin getMinNonDustOutput();
-
     /**
      * The monetary object for this currency.
      */

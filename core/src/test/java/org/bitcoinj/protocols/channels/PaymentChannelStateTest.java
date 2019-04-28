@@ -55,6 +55,7 @@ public class PaymentChannelStateTest extends TestWithWallet {
     private TransactionBroadcaster mockBroadcaster;
     private BlockingQueue<TxFuturePair> broadcasts;
     private static final Coin HALF_COIN = Coin.valueOf(0, 50);
+    private static final Coin MIN_NONDUST_OUTPUT = Coin.valueOf(546); // satoshis
 
     /**
      * We use parameterized tests to run the channel connection tests with each
@@ -716,7 +717,7 @@ public class PaymentChannelStateTest extends TestWithWallet {
         } catch (ValueOutOfRangeException e) {}
 
         clientState = makeClientState(wallet, myKey, ECKey.fromPublicOnly(serverKey.getPubKey()),
-                Transaction.MIN_NONDUST_OUTPUT.subtract(Coin.SATOSHI).add(Transaction.REFERENCE_DEFAULT_MIN_TX_FEE),
+                MIN_NONDUST_OUTPUT.subtract(Coin.SATOSHI).add(Transaction.REFERENCE_DEFAULT_MIN_TX_FEE),
                 EXPIRE_TIME);
         assertEquals(PaymentChannelClientState.State.NEW, clientState.getState());
         try {
@@ -726,7 +727,7 @@ public class PaymentChannelStateTest extends TestWithWallet {
 
         // Verify that MIN_NONDUST_OUTPUT + MIN_TX_FEE is accepted
         clientState = makeClientState(wallet, myKey, ECKey.fromPublicOnly(serverKey.getPubKey()),
-                Transaction.MIN_NONDUST_OUTPUT.add(Transaction.REFERENCE_DEFAULT_MIN_TX_FEE), EXPIRE_TIME);
+                MIN_NONDUST_OUTPUT.add(Transaction.REFERENCE_DEFAULT_MIN_TX_FEE), EXPIRE_TIME);
         assertEquals(PaymentChannelClientState.State.NEW, clientState.getState());
         // We'll have to pay REFERENCE_DEFAULT_MIN_TX_FEE twice (multisig+refund), and we'll end up getting back nearly nothing...
         clientState.initiate();
@@ -787,13 +788,13 @@ public class PaymentChannelStateTest extends TestWithWallet {
         // We cannot send just under the total value - our refund would make it unspendable. So the client
         // will correct it for us to be larger than the requested amount, to make the change output zero.
         PaymentChannelClientState.IncrementedPayment payment =
-                clientState.incrementPaymentBy(CENT.subtract(Transaction.MIN_NONDUST_OUTPUT), null);
+                clientState.incrementPaymentBy(CENT.subtract(MIN_NONDUST_OUTPUT), null);
         assertEquals(CENT.subtract(SATOSHI), payment.amount);
         totalPayment = totalPayment.add(payment.amount);
 
         // The server also won't accept it if we do that.
         try {
-            serverState.incrementPayment(Transaction.MIN_NONDUST_OUTPUT.subtract(Coin.SATOSHI), signature);
+            serverState.incrementPayment(MIN_NONDUST_OUTPUT.subtract(Coin.SATOSHI), signature);
             fail();
         } catch (ValueOutOfRangeException e) {}
 

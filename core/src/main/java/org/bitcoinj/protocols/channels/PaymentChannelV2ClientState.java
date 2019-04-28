@@ -43,6 +43,7 @@ import static com.google.common.base.Preconditions.checkState;
  */
 public class PaymentChannelV2ClientState extends PaymentChannelClientState {
     private static final Logger log = LoggerFactory.getLogger(PaymentChannelV1ClientState.class);
+    private static final Coin MIN_NONDUST_OUTPUT = Coin.valueOf(546); // satoshis
 
     // How much value (in satoshis) is locked up into the channel.
     private final Coin totalValue;
@@ -132,7 +133,7 @@ public class PaymentChannelV2ClientState extends PaymentChannelClientState {
         if (Context.get().isEnsureMinRequiredFee()) {
             // Must pay min fee.
             final Coin valueAfterFee = totalValue.subtract(Transaction.REFERENCE_DEFAULT_MIN_TX_FEE);
-            if (Transaction.MIN_NONDUST_OUTPUT.compareTo(valueAfterFee) > 0)
+            if (MIN_NONDUST_OUTPUT.compareTo(valueAfterFee) > 0)
                 throw new ValueOutOfRangeException("totalValue too small to use");
             refundTx.addOutput(valueAfterFee, LegacyAddress.fromKey(params, myKey));
             refundFees = multisigFee.add(Transaction.REFERENCE_DEFAULT_MIN_TX_FEE);
