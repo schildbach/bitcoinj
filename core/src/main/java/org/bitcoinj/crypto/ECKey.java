@@ -1425,8 +1425,8 @@ public class ECKey implements EncryptableItem {
     }
 
     /**
-     * Custom K calculator with ability to add additional entropy to the calculation. This is needed for grinding low
-     * signature R values. Before calling {@link #setEntropy(byte[])} no entropy is added.
+     * Custom K calculator with ability to add additional entropy to the calculation. This is needed for grinding for
+     * low signature R values. Before calling {@link #setEntropy(byte[])}, no entropy is added.
      */
     private static class HMacDSAKCalculatorWithEntrophy extends HMacDSAKCalculator {
         @Nullable
