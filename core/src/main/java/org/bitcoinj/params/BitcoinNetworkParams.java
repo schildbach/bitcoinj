@@ -18,6 +18,7 @@
 package org.bitcoinj.params;
 
 import org.bitcoinj.base.BitcoinNetwork;
+import org.bitcoinj.base.Difficulty;
 import org.bitcoinj.base.internal.Stopwatch;
 import org.bitcoinj.base.internal.TimeUtils;
 import org.bitcoinj.base.internal.ByteUtils;
@@ -158,10 +159,10 @@ public abstract class BitcoinNetworkParams extends NetworkParameters {
         if (!isDifficultyTransitionPoint(storedPrev.getHeight())) {
 
             // No ... so check the difficulty didn't actually change.
-            if (nextBlock.getDifficultyTarget() != prev.getDifficultyTarget())
+            if (!nextBlock.difficultyTarget().equals(prev.difficultyTarget()))
                 throw new VerificationException("Unexpected change in difficulty at height " + storedPrev.getHeight() +
-                        ": " + Long.toHexString(nextBlock.getDifficultyTarget()) + " vs " +
-                        Long.toHexString(prev.getDifficultyTarget()));
+                        ": " + nextBlock.difficultyTarget() + " vs " +
+                        prev.difficultyTarget());
             return;
         }
 
@@ -195,11 +196,11 @@ public abstract class BitcoinNetworkParams extends NetworkParameters {
         if (timespan > targetTimespan * 4)
             timespan = targetTimespan * 4;
 
-        BigInteger newTarget = ByteUtils.decodeCompactBits(prev.getDifficultyTarget());
+        BigInteger newTarget = prev.difficultyTarget().asInteger();
         newTarget = newTarget.multiply(BigInteger.valueOf(timespan));
         newTarget = newTarget.divide(BigInteger.valueOf(targetTimespan));
 
-        BigInteger maxTarget = this.getMaxTarget();
+        BigInteger maxTarget = this.maxTarget.asInteger();
         if (newTarget.compareTo(maxTarget) > 0) {
             log.info("Difficulty hit proof of work limit: {} vs {}",
                     Long.toHexString(ByteUtils.encodeCompactBits(newTarget)),
@@ -207,17 +208,11 @@ public abstract class BitcoinNetworkParams extends NetworkParameters {
             newTarget = maxTarget;
         }
 
-        int accuracyBytes = (int) (nextBlock.getDifficultyTarget() >>> 24) - 3;
-        long receivedTargetCompact = nextBlock.getDifficultyTarget();
-
-        // The calculated difficulty is to a higher precision than received, so reduce here.
-        BigInteger mask = BigInteger.valueOf(0xFFFFFFL).shiftLeft(accuracyBytes * 8);
-        newTarget = newTarget.and(mask);
-        long newTargetCompact = ByteUtils.encodeCompactBits(newTarget);
-
-        if (newTargetCompact != receivedTargetCompact)
+        Difficulty receivedTarget = nextBlock.difficultyTarget();
+        Difficulty newTargetDifficulty = Difficulty.ofInteger(newTarget);
+        if (!newTargetDifficulty.equals(receivedTarget))
             throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
-                    Long.toHexString(newTargetCompact) + " vs " + Long.toHexString(receivedTargetCompact));
+                    newTargetDifficulty + " vs " + receivedTarget);
     }
 
     @Override
