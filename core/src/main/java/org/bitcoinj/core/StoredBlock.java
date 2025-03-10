@@ -129,7 +129,10 @@ public class StoredBlock {
      * @return the previous block in the chain or null if it was not found in the store.
      */
     public StoredBlock getPrev(BlockStore store) throws BlockStoreException {
-        return store.get(getHeader().getPrevBlockHash());
+        if (height == 0)
+            // Genesis blocks have no previous block.
+            return null;
+        return store.get(header.getPrevBlockHash());
     }
 
     /**
