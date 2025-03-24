@@ -428,7 +428,7 @@ public class ScriptBuilder {
     /**
      * Creates a scriptPubKey that encodes a payment to the given raw public key. The pubkey can be arbitrary data and
      * may be invalid.
-     *
+     * <p>
      * This is a special purpose method. For normal P2PK use, it is recommended to construct a pubkey with
      * {@link ECKey#fromPublicOnly(byte[])} and use that on {@link #createP2PKOutputScript(ECKey)}.
      *
