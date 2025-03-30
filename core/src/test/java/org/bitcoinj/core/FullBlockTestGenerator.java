@@ -532,7 +532,7 @@ public class FullBlockTestGenerator {
         NewBlock b31 = createNextBlock(b30, chainHeadHeight + 9, out8, null);
         {
             int sigOps = 0;
-            for (Transaction tx : b31.block.transactions) {
+            for (Transaction tx : b31.block.transactions()) {
                 sigOps += tx.getSigOpCount();
             }
             Transaction tx = new Transaction();
@@ -552,7 +552,7 @@ public class FullBlockTestGenerator {
         NewBlock b32 = createNextBlock(b31, chainHeadHeight + 10, out9, null);
         {
             int sigOps = 0;
-            for (Transaction tx : b32.block.transactions) {
+            for (Transaction tx : b32.block.transactions()) {
                 sigOps += tx.getSigOpCount();
             }
             Transaction tx = new Transaction();
@@ -570,7 +570,7 @@ public class FullBlockTestGenerator {
         NewBlock b33 = createNextBlock(b31, chainHeadHeight + 10, out9, null);
         {
             int sigOps = 0;
-            for (Transaction tx : b33.block.transactions) {
+            for (Transaction tx : b33.block.transactions()) {
                 sigOps += tx.getSigOpCount();
             }
             Transaction tx = new Transaction();
