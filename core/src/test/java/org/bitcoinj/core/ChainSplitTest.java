@@ -125,7 +125,7 @@ public class ChainSplitTest {
         Block b7 = b1.createNextBlock(coinsTo);
         assertTrue(chain.add(b7));
         Block b8 = b1.createNextBlock(coinsTo);
-        final Transaction t = b7.getTransactions().get(1);
+        final Transaction t = b7.transactions().get(1);
         final Sha256Hash tHash = t.getTxId();
         b8.addTransaction(t);
         assertTrue(chain.add(roundtrip(b8)));

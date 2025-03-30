@@ -935,7 +935,7 @@ public class Peer extends PeerSocketHandler {
         checkArgument(!m.isHeaderOnly(), () -> "block is header-only");
         if (log.isDebugEnabled())
             log.debug("{}: Received broadcast block {}", getAddress(), m.getHashAsString());
-        m.getTransactions().forEach(tx ->
+        m.transactions().forEach(tx ->
             tx.getConfidence().maybeSetSourceToNetwork()
         );
         // Was this block requested by getBlock()?

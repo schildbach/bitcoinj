@@ -589,7 +589,7 @@ public abstract class AbstractBlockChain {
         if (!params.passesCheckpoint(storedPrev.getHeight() + 1, block.getHash()))
             throw new VerificationException("Block failed checkpoint lockin at " + (storedPrev.getHeight() + 1));
         if (shouldVerifyTransactions()) {
-            for (Transaction tx : block.getTransactions())
+            for (Transaction tx : block.transactions())
                 if (!tx.isFinal(storedPrev.getHeight() + 1, block.time()))
                    throw new VerificationException("Block contains non-final transaction");
         }
@@ -745,7 +745,7 @@ public abstract class AbstractBlockChain {
             // is relevant to both of them, they don't end up accidentally sharing the same object (which can
             // result in temporary in-memory corruption during re-orgs). See bug 257. We only duplicate in
             // the case of multiple wallets to avoid an unnecessary efficiency hit in the common case.
-            sendTransactionsToListener(newStoredBlock, newBlockType, listener, 0, block.getTransactions(),
+            sendTransactionsToListener(newStoredBlock, newBlockType, listener, 0, block.transactions(),
                     !first, falsePositives);
         } else if (filteredTxHashList != null) {
             Objects.requireNonNull(filteredTxn);

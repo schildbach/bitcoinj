@@ -796,10 +796,22 @@ public class Block implements Message {
         this.hash = null;
     }
 
-    /** Returns an unmodifiable list of transactions held in this block, or null if this object represents just a header. */
+    /**
+     * Returns an unmodifiable list of transactions held in this block. This can only be called on regular
+     * (non-header-only) blocks.
+     *
+     * @return transactions in this block, can be empty
+     */
+    public List<Transaction> transactions() {
+        checkState(!isHeaderOnly(), () -> "block is header-only");
+        return Collections.unmodifiableList(transactions);
+    }
+
+    /** @deprecated use {@link #transactions()} or {@link #isHeaderOnly()} */
+    @Deprecated
     @Nullable
     public List<Transaction> getTransactions() {
-        return isHeaderOnly() ? null : Collections.unmodifiableList(transactions);
+        return isHeaderOnly() ? null : transactions();
     }
 
     // ///////////////////////////////////////////////////////////////////////////////////////////////
