@@ -274,7 +274,7 @@ public class DeterministicKey extends ECKey {
      * memory: the private key can always be very efficiently rederived from a parent that a private key, so storing
      * all the private keys in RAM is a poor tradeoff especially on constrained devices. This means that the returned
      * key may still be usable for signing and so on, so don't expect it to be a true pubkey-only object! If you want
-     * that then you should follow this call with a call to {@link #dropParent()}.
+     * that then you should follow this call with a call to {@link #withoutParent()}.
      */
     public DeterministicKey dropPrivateBytes() {
         if (isPubKeyOnly())
@@ -287,13 +287,19 @@ public class DeterministicKey extends ECKey {
      * <p>Returns the same key with the parent pointer removed (it still knows its own path and the parent fingerprint).</p>
      *
      * <p>If this key doesn't have private key bytes stored/cached itself, but could rederive them from the parent, then
-     * the new key returned by this method won't be able to do that. Thus, using dropPrivateBytes().dropParent() on a
+     * the new key returned by this method won't be able to do that. Thus, using dropPrivateBytes().withoutParent() on a
      * regular DeterministicKey will yield a new DeterministicKey that cannot sign or do other things involving the
      * private key at all.</p>
      */
-    public DeterministicKey dropParent() {
+    public DeterministicKey withoutParent() {
         return new DeterministicKey(priv, pub, depth, null, parentFingerprint, chainCode, childNumberPath,
                 encryptedPrivateKey, keyCrypter);
+    }
+
+    /** @deprecated use {@link #withoutParent()} */
+    @Deprecated
+    public DeterministicKey dropParent() {
+        return withoutParent();
     }
 
     static byte[] addChecksum(byte[] input) {
