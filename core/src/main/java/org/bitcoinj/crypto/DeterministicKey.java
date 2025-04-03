@@ -27,6 +27,8 @@ import org.bitcoinj.core.NetworkParameters;
 import org.bitcoinj.base.Sha256Hash;
 import org.bitcoinj.crypto.internal.CryptoUtils;
 import org.bouncycastle.math.ec.ECPoint;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.math.BigInteger;
@@ -48,6 +50,7 @@ import static org.bitcoinj.base.internal.Preconditions.checkState;
  * one of these, you can call {@link HDKeyDerivation#createMasterPrivateKey(byte[])}.
  */
 public class DeterministicKey extends ECKey {
+    private static final Logger log = LoggerFactory.getLogger(DeterministicKey.class);
 
     /** Sorts deterministic keys in the order of their child number. That's <i>usually</i> the order used to derive them. */
     public static final Comparator<ECKey> CHILDNUM_ORDER = (k1, k2) -> {
@@ -157,6 +160,10 @@ public class DeterministicKey extends ECKey {
 
     /**
      * Canonical constructor.
+     * <p>
+     * Warning: while key derivation works fine for depths greater than 255, you will not  be able to serialize such
+     * keys via {@link #serializePubB58(Network)} or {@link #serializePrivB58(Network)} due to the depth being crammed
+     * into a byte.
      *
      * @param priv                private key, or {@code null} if public key only
      * @param pub                 public key, corresponding to private key (if present)
@@ -177,6 +184,8 @@ public class DeterministicKey extends ECKey {
                 "priv and encryptedPrivateKey can't be set together");
         checkArgument((encryptedPrivateKey == null) == (keyCrypter == null), () ->
                 "encryptedPrivateKey and keyCrypter must be set together");
+        if (depth > 255)
+            log.warn("deterministic key with depth " + depth + " will not be Base58-serializable");
         this.depth = depth;
         this.parent = parent;
         this.parentFingerprint = ascertainParentFingerprint(parent, parentFingerprint);
