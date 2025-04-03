@@ -149,7 +149,7 @@ public class DeterministicKey extends ECKey {
                             int depth,
                             int parentFingerprint) {
         this(priv, new LazyECPoint(ECKey.publicPointFromPrivate(priv), true), depth, parent, parentFingerprint,
-                chainCode, HDPath.M(childNumberPath), null, null);
+                chainCode, HDPath.m(childNumberPath), null, null);
     }
 
     /** Clones the key */
