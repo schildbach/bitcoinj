@@ -152,12 +152,6 @@ public class DeterministicKey extends ECKey {
                 chainCode, HDPath.m(childNumberPath), null, null);
     }
 
-    /** Clones the key */
-    public DeterministicKey(DeterministicKey keyToClone, DeterministicKey newParent) {
-        this(keyToClone.priv, keyToClone.pub, keyToClone.childNumberPath.size(), newParent,
-                newParent.getFingerprint(), keyToClone.chainCode, keyToClone.childNumberPath, null, null);
-    }
-
     /**
      * Canonical constructor.
      * <p>
@@ -281,6 +275,18 @@ public class DeterministicKey extends ECKey {
             return this;
         else
             return new DeterministicKey(getPath(), getChainCode(), pub, null, parent);
+    }
+
+    /**
+     * Returns the same key with another parent and parent fingerprint.
+     *
+     * @param parent new parent
+     * @return key with another parent and parent fingerprint
+     */
+    public DeterministicKey withParent(DeterministicKey parent) {
+        Objects.requireNonNull(parent);
+        return new DeterministicKey(this.priv, this.pub, this.depth, parent, parent.getFingerprint(), this.chainCode,
+                this.childNumberPath, this.encryptedPrivateKey, this.keyCrypter);
     }
 
     /**
